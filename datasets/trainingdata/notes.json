@@ -1,0 +1,21 @@
+{
+  "categories": [
+    {
+      "id": 0,
+      "name": "Apple"
+    },
+    {
+      "id": 1,
+      "name": "Banana"
+    },
+    {
+      "id": 2,
+      "name": "Orange"
+    }
+  ],
+  "info": {
+    "year": 2024,
+    "version": "1.0",
+    "contributor": "Label Studio"
+  }
+}
