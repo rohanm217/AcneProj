@@ -2,7 +2,6 @@ import customtkinter as ctk
 from tkinter import filedialog
 from PIL import Image
 from ultralytics import YOLO
-import os
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
@@ -24,7 +23,15 @@ class SkinScanAI(ctk.CTk):
             self.status_msg = "Status: Model weights not found in path."
 
         self.current_path = None
-        
+
+        self.severity_weights = {
+            'milium': 1, 'blackhead': 1, 'crystanlline': 1,
+            'Pimples': 2, 'papular': 2,
+            'purulent': 3, 'folliculitis': 3,
+            'cystic': 4, 'keloid': 4,
+            'conglobata': 5,
+        }
+
         self.recs = {
             'Pimples': {'AM': 'Salicylic Acid Cleanser', 'PM': 'Benzoyl Peroxide 5% Spot Treatment'},
             'blackhead': {'AM': 'BHA Liquid Exfoliant', 'PM': 'Double Cleanse (Oil + Water)'},
@@ -82,6 +89,20 @@ class SkinScanAI(ctk.CTk):
             self.current_path = file_path
             self.analyze_skin(file_path)
 
+    def compute_severity(self, unique_classes):
+        score = sum(self.severity_weights.get(c, 1) for c in unique_classes)
+        if score == 0:
+            label = "Clear"
+        elif score <= 2:
+            label = "Mild"
+        elif score <= 6:
+            label = "Moderate"
+        elif score <= 12:
+            label = "Severe"
+        else:
+            label = "Critical"
+        return score, label
+
     def analyze_skin(self, path):
         if not self.model:
             self.result_text.insert("0.0", "Model not loaded.")
@@ -89,15 +110,18 @@ class SkinScanAI(ctk.CTk):
 
         conf_val = self.conf_slider.get()
         results = self.model.predict(source=path, conf=conf_val)
-        found = set()
+        found = {}  # class_name -> max confidence
         processed_img = None
 
         for r in results:
-            plot_bgr = r.plot() 
-            plot_rgb = plot_bgr[:, :, ::-1] 
+            plot_bgr = r.plot()
+            plot_rgb = plot_bgr[:, :, ::-1]
             processed_img = Image.fromarray(plot_rgb)
             for box in r.boxes:
-                found.add(self.model.names[int(box.cls[0])])
+                cls_name = self.model.names[int(box.cls[0])]
+                conf = float(box.conf[0])
+                if cls_name not in found or conf > found[cls_name]:
+                    found[cls_name] = conf
 
         if processed_img:
             ctk_img = ctk.CTkImage(light_image=processed_img, size=(450, 450))
@@ -108,10 +132,12 @@ class SkinScanAI(ctk.CTk):
         if not found:
             self.result_text.insert("0.0", "No skin conditions detected at this sensitivity.")
         else:
-            self.result_text.insert("0.0", f"--- SKIN ANALYSIS REPORT (Threshold: {conf_val:.2f}) ---\n\n")
-            for issue in found:
+            score, label = self.compute_severity(list(found.keys()))
+            self.result_text.insert("0.0", f"--- SKIN ANALYSIS REPORT (Threshold: {conf_val:.2f}) ---\n")
+            self.result_text.insert("end", f"Overall Severity: {label.upper()} (Score: {score})\n\n")
+            for issue, confidence in found.items():
                 advice = self.recs.get(issue, {'AM': 'Gentle Care', 'PM': 'Consult Professional'})
-                self.result_text.insert("end", f"Condition: {issue.upper()}\n")
+                self.result_text.insert("end", f"Condition: {issue.upper()} ({confidence:.0%} confidence)\n")
                 self.result_text.insert("end", f"  Recommended AM: {advice['AM']}\n")
                 self.result_text.insert("end", f"  Recommended PM: {advice['PM']}\n")
                 self.result_text.insert("end", "-"*50 + "\n")
