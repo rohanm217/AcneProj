@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SkinScan AI — Skin Condition Analysis</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F2F4F3;
+    --panel:#FFFFFF;
+    --ink:#10161A;
+    --slate:#5C6870;
+    --line:#D8DEDC;
+    --teal:#0FA98A;
+    --teal-dim:#0FA98A22;
+    --clear:#2ecc71;
+    --mild:#f1c40f;
+    --moderate:#e67e22;
+    --severe:#e74c3c;
+    --critical:#8e44ad;
+    --radius:2px;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'IBM Plex Sans', sans-serif;
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+  }
+  ::selection{background:var(--teal-dim);color:var(--ink);}
+
+  a{color:inherit;}
+
+  :focus-visible{
+    outline:2px solid var(--teal);
+    outline-offset:2px;
+  }
+
+  /* ── Layout shell ─────────────────────────────────────────────── */
+
+  .app{
+    max-width:1180px;
+    margin:0 auto;
+    padding:0 28px 60px;
+  }
+
+  .topbar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:34px 0 26px;
+    border-bottom:1px solid var(--line);
+    margin-bottom:34px;
+    gap:16px;
+    flex-wrap:wrap;
+  }
+
+  .brand{
+    display:flex;
+    align-items:baseline;
+    gap:10px;
+  }
+  .brand-mark{
+    font-family:'Space Grotesk', sans-serif;
+    font-weight:700;
+    font-size:22px;
+    letter-spacing:-0.01em;
+  }
+  .brand-tag{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10px;
+    letter-spacing:0.14em;
+    color:var(--teal);
+    border:1px solid var(--teal);
+    padding:2px 6px;
+    border-radius:var(--radius);
+    text-transform:uppercase;
+  }
+  .brand-eyebrow{
+    font-size:13px;
+    color:var(--slate);
+    margin-top:2px;
+  }
+
+  .status-pill{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    letter-spacing:0.03em;
+    color:var(--slate);
+    padding:7px 12px;
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    background:var(--panel);
+  }
+  .status-dot{
+    width:7px;height:7px;border-radius:50%;
+    background:var(--slate);
+    flex-shrink:0;
+  }
+  .status-pill.ok .status-dot{background:var(--teal); box-shadow:0 0 0 3px var(--teal-dim);}
+  .status-pill.warn .status-dot{background:var(--severe);}
+
+  /* ── Stage: two column ───────────────────────────────────────── */
+
+  .stage{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:26px;
+    align-items:start;
+  }
+  @media (max-width:860px){
+    .stage{grid-template-columns:1fr;}
+  }
+
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+  }
+
+  /* ── Scan panel (left) ───────────────────────────────────────── */
+
+  .scan-panel{padding:20px;}
+
+  .panel-eyebrow{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10px;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--slate);
+    margin-bottom:14px;
+  }
+
+  .frame{
+    position:relative;
+    aspect-ratio:1/1;
+    background:
+      repeating-linear-gradient(45deg, #EDEFED 0, #EDEFED 1px, transparent 1px, transparent 14px),
+      #F8F9F8;
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    overflow:hidden;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+    outline-offset:-2px;
+  }
+  .frame img, .frame video{
+    width:100%;height:100%;object-fit:cover;
+    display:block;
+  }
+  .frame video{transform:scaleX(-1);}
+
+  .corner{
+    position:absolute;
+    width:22px;height:22px;
+    border:2px solid var(--ink);
+    opacity:0.8;
+    pointer-events:none;
+  }
+  .corner.tl{top:10px;left:10px;border-right:none;border-bottom:none;}
+  .corner.tr{top:10px;right:10px;border-left:none;border-bottom:none;}
+  .corner.bl{bottom:10px;left:10px;border-right:none;border-top:none;}
+  .corner.br{bottom:10px;right:10px;border-left:none;border-top:none;}
+
+  .placeholder{
+    text-align:center;
+    color:var(--slate);
+    padding:24px;
+    pointer-events:none;
+  }
+  .placeholder-icon{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:26px;
+    color:var(--teal);
+    margin-bottom:8px;
+    letter-spacing:0.1em;
+  }
+  .placeholder-text{font-size:13px; line-height:1.5;}
+  .placeholder-sub{font-size:11px; color:var(--slate); margin-top:6px; font-family:'IBM Plex Mono', monospace;}
+
+  .scanline{
+    position:absolute;
+    left:0; right:0; top:0;
+    height:2px;
+    background:linear-gradient(90deg, transparent, var(--teal) 20%, var(--teal) 80%, transparent);
+    box-shadow:0 0 12px 1px var(--teal);
+    opacity:0;
+  }
+  .frame.scanning .scanline{
+    opacity:1;
+    animation:sweep 1.4s ease-in-out infinite;
+  }
+  @keyframes sweep{
+    0%{top:0%;}
+    50%{top:98%;}
+    100%{top:0%;}
+  }
+  @media (prefers-reduced-motion: reduce){
+    .frame.scanning .scanline{animation:none; opacity:0.6; top:50%;}
+  }
+
+  input[type="file"]{display:none;}
+
+  .row{
+    display:flex;
+    gap:10px;
+    margin-top:14px;
+  }
+  .btn{
+    font-family:'IBM Plex Sans', sans-serif;
+    font-size:13px;
+    font-weight:500;
+    padding:11px 16px;
+    border-radius:var(--radius);
+    border:1px solid var(--line);
+    background:var(--panel);
+    color:var(--ink);
+    cursor:pointer;
+    transition:background 0.15s, border-color 0.15s;
+  }
+  .btn:hover{border-color:var(--ink);}
+  .btn:disabled{opacity:0.4; cursor:not-allowed;}
+  .btn:disabled:hover{border-color:var(--line);}
+
+  .btn-primary{
+    background:var(--ink);
+    color:var(--paper);
+    border-color:var(--ink);
+    flex:1;
+  }
+  .btn-primary:hover{background:#000;}
+  .btn-primary:disabled{background:var(--slate); border-color:var(--slate); color:var(--paper);}
+
+  .btn-secondary{flex:1;}
+
+  .sensitivity{
+    margin-top:18px;
+    padding-top:16px;
+    border-top:1px dashed var(--line);
+  }
+  .sensitivity-label{
+    display:flex;
+    justify-content:space-between;
+    font-size:12px;
+    color:var(--slate);
+    margin-bottom:8px;
+  }
+  .sensitivity-label span:last-child{
+    font-family:'IBM Plex Mono', monospace;
+    color:var(--ink);
+    font-weight:500;
+  }
+  input[type="range"]{
+    -webkit-appearance:none;
+    width:100%;
+    height:2px;
+    background:var(--line);
+    border-radius:2px;
+    outline:none;
+  }
+  input[type="range"]::-webkit-slider-thumb{
+    -webkit-appearance:none;
+    width:14px; height:14px;
+    border-radius:50%;
+    background:var(--teal);
+    cursor:pointer;
+    border:2px solid var(--panel);
+    box-shadow:0 0 0 1px var(--teal);
+  }
+  input[type="range"]::-moz-range-thumb{
+    width:14px; height:14px;
+    border-radius:50%;
+    background:var(--teal);
+    cursor:pointer;
+    border:2px solid var(--panel);
+    box-shadow:0 0 0 1px var(--teal);
+  }
+
+  /* ── Report panel (right) ────────────────────────────────────── */
+
+  .report-panel{
+    padding:20px;
+    min-height:100%;
+  }
+
+  .report-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    margin-bottom:16px;
+  }
+  .report-time{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    color:var(--slate);
+  }
+
+  .empty-state{
+    padding:40px 10px;
+    text-align:center;
+    color:var(--slate);
+  }
+  .empty-state-title{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:16px;
+    color:var(--ink);
+    margin-bottom:6px;
+  }
+  .empty-state-body{font-size:13px; line-height:1.6; max-width:320px; margin:0 auto;}
+
+  .severity-block{
+    display:flex;
+    align-items:center;
+    gap:14px;
+    padding:14px;
+    border-radius:var(--radius);
+    margin-bottom:18px;
+    border:1px solid var(--line);
+  }
+  .severity-swatch{
+    width:10px;height:44px;border-radius:2px;flex-shrink:0;
+  }
+  .severity-label{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:18px;
+    font-weight:600;
+  }
+  .severity-score{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px;
+    color:var(--slate);
+  }
+
+  .section-label{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10px;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--slate);
+    margin:20px 0 10px;
+    padding-top:14px;
+    border-top:1px dashed var(--line);
+  }
+  .section-label:first-child{border-top:none; margin-top:0; padding-top:0;}
+
+  .condition-card{
+    padding:12px 0;
+    border-bottom:1px solid var(--line);
+  }
+  .condition-card:last-child{border-bottom:none;}
+  .condition-top{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    margin-bottom:6px;
+  }
+  .condition-name{
+    font-family:'Space Grotesk', sans-serif;
+    font-weight:600;
+    font-size:14px;
+    text-transform:capitalize;
+  }
+  .condition-conf{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    color:var(--teal);
+  }
+  .condition-recs{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:8px;
+    font-size:12px;
+    color:var(--slate);
+  }
+  .rec-slot b{
+    color:var(--ink);
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10px;
+    letter-spacing:0.08em;
+    display:block;
+    margin-bottom:2px;
+  }
+
+  .conflict-item{
+    font-size:12px;
+    line-height:1.6;
+    padding:10px 12px;
+    background:#FBF3E9;
+    border-left:2px solid var(--moderate);
+    border-radius:var(--radius);
+    margin-bottom:8px;
+    color:#5c4a1f;
+  }
+
+  .error-box{
+    font-size:13px;
+    padding:12px;
+    background:#FBEAEA;
+    border-left:2px solid var(--severe);
+    color:#7a2a2a;
+    border-radius:var(--radius);
+  }
+
+  /* ── Footer ───────────────────────────────────────────────────── */
+
+  .footer{
+    margin-top:30px;
+    padding-top:20px;
+    border-top:1px solid var(--line);
+    display:flex;
+    justify-content:space-between;
+    gap:20px;
+    flex-wrap:wrap;
+  }
+  .disclaimer{
+    font-size:11.5px;
+    color:var(--slate);
+    line-height:1.6;
+    max-width:620px;
+  }
+  .stack{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    color:var(--slate);
+    white-space:nowrap;
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <div class="topbar">
+    <div>
+      <div class="brand">
+        <span class="brand-mark">SkinScan</span>
+        <span class="brand-tag">AI</span>
+      </div>
+      <div class="brand-eyebrow">Computer-vision acne &amp; skin condition analysis</div>
+    </div>
+    <div class="status-pill" id="statusPill">
+      <span class="status-dot"></span>
+      <span id="statusText">Checking model status…</span>
+    </div>
+  </div>
+
+  <div class="stage">
+
+    <!-- LEFT: scan input -->
+    <div class="panel scan-panel">
+      <div class="panel-eyebrow">01 — Input</div>
+
+      <div class="frame" id="frame" tabindex="0" role="button" aria-label="Upload a photo to scan">
+        <div class="corner tl"></div>
+        <div class="corner tr"></div>
+        <div class="corner bl"></div>
+        <div class="corner br"></div>
+        <div class="scanline" id="scanline"></div>
+        <div class="placeholder" id="placeholder">
+          <div class="placeholder-icon">◎</div>
+          <div class="placeholder-text">Drop a photo here, or click to choose one</div>
+          <div class="placeholder-sub">JPG / PNG · face or affected area, good lighting</div>
+        </div>
+        <img id="previewImg" alt="" style="display:none;">
+        <video id="cam" autoplay playsinline style="display:none;"></video>
+      </div>
+      <input type="file" id="fileInput" accept="image/jpeg,image/png,image/jpg">
+
+      <div class="row">
+        <button class="btn btn-secondary" id="uploadBtn">Upload photo</button>
+        <button class="btn btn-secondary" id="camBtn">Use camera</button>
+      </div>
+      <div class="row">
+        <button class="btn btn-primary" id="analyzeBtn" disabled>Run scan</button>
+      </div>
+
+      <div class="sensitivity">
+        <div class="sensitivity-label">
+          <span>Detection sensitivity</span>
+          <span id="confVal">0.35</span>
+        </div>
+        <input type="range" id="confSlider" min="0.10" max="0.90" step="0.01" value="0.35">
+      </div>
+    </div>
+
+    <!-- RIGHT: report -->
+    <div class="panel report-panel">
+      <div class="report-head">
+        <div class="panel-eyebrow" style="margin:0;">02 — Report</div>
+        <div class="report-time" id="reportTime"></div>
+      </div>
+
+      <div id="reportBody">
+        <div class="empty-state">
+          <div class="empty-state-title">No scan yet</div>
+          <div class="empty-state-body">Upload a photo to see detected conditions, an overall severity score, and a matching AM/PM routine.</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="footer">
+    <div class="disclaimer">SkinScan AI is for informational purposes only and is not medical advice. Always consult a licensed dermatologist for diagnosis and treatment.</div>
+    <div class="stack">YOLOv8 · FASTAPI · VANILLA JS</div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  const frame = document.getElementById('frame');
+  const placeholder = document.getElementById('placeholder');
+  const previewImg = document.getElementById('previewImg');
+  const cam = document.getElementById('cam');
+  const fileInput = document.getElementById('fileInput');
+  const uploadBtn = document.getElementById('uploadBtn');
+  const camBtn = document.getElementById('camBtn');
+  const analyzeBtn = document.getElementById('analyzeBtn');
+  const confSlider = document.getElementById('confSlider');
+  const confVal = document.getElementById('confVal');
+  const reportBody = document.getElementById('reportBody');
+  const reportTime = document.getElementById('reportTime');
+  const statusPill = document.getElementById('statusPill');
+  const statusText = document.getElementById('statusText');
+  const scanline = document.getElementById('scanline');
+
+  const SEVERITY_COLORS = {
+    Clear: '#2ecc71', Mild: '#f1c40f', Moderate: '#e67e22',
+    Severe: '#e74c3c', Critical: '#8e44ad'
+  };
+
+  let currentImageB64 = null;
+  let stream = null;
+
+  // ── Health check ──────────────────────────────────────────────
+  fetch('/health').then(r => r.json()).then(data => {
+    if (data.model_loaded) {
+      statusPill.classList.add('ok');
+      statusText.textContent = `Model loaded · ${data.classes.length} classes`;
+    } else {
+      statusPill.classList.add('warn');
+      statusText.textContent = 'Demo mode · trained weights not found';
+    }
+  }).catch(() => {
+    statusPill.classList.add('warn');
+    statusText.textContent = 'Server unreachable';
+  });
+
+  // ── Upload flow ───────────────────────────────────────────────
+  uploadBtn.addEventListener('click', () => fileInput.click());
+  frame.addEventListener('click', () => { if (!stream) fileInput.click(); });
+  frame.addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && !stream) { e.preventDefault(); fileInput.click(); }
+  });
+
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files[0];
+    if (file) loadFile(file);
+  });
+
+  frame.addEventListener('dragover', (e) => { e.preventDefault(); frame.style.borderColor = 'var(--teal)'; });
+  frame.addEventListener('dragleave', () => { frame.style.borderColor = 'var(--line)'; });
+  frame.addEventListener('drop', (e) => {
+    e.preventDefault();
+    frame.style.borderColor = 'var(--line)';
+    const file = e.dataTransfer.files[0];
+    if (file) loadFile(file);
+  });
+
+  function loadFile(file){
+    stopCamera();
+    const reader = new FileReader();
+    reader.onload = () => {
+      currentImageB64 = reader.result;
+      showPreview(reader.result);
+      analyzeBtn.disabled = false;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function showPreview(src){
+    previewImg.src = src;
+    previewImg.style.display = 'block';
+    cam.style.display = 'none';
+    placeholder.style.display = 'none';
+  }
+
+  // ── Camera flow ──────────────────────────────────────────────
+  camBtn.addEventListener('click', async () => {
+    if (stream) { capturePhoto(); return; }
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+      cam.srcObject = stream;
+      cam.style.display = 'block';
+      previewImg.style.display = 'none';
+      placeholder.style.display = 'none';
+      camBtn.textContent = 'Capture';
+      analyzeBtn.disabled = true;
+    } catch (err) {
+      alert('Could not access camera: ' + err.message);
+    }
+  });
+
+  function capturePhoto(){
+    const canvas = document.createElement('canvas');
+    canvas.width = cam.videoWidth;
+    canvas.height = cam.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(cam, 0, 0);
+    currentImageB64 = canvas.toDataURL('image/png');
+    stopCamera();
+    showPreview(currentImageB64);
+    analyzeBtn.disabled = false;
+  }
+
+  function stopCamera(){
+    if (stream) {
+      stream.getTracks().forEach(t => t.stop());
+      stream = null;
+    }
+    cam.style.display = 'none';
+    camBtn.textContent = 'Use camera';
+  }
+
+  // ── Sensitivity ──────────────────────────────────────────────
+  confSlider.addEventListener('input', () => {
+    confVal.textContent = parseFloat(confSlider.value).toFixed(2);
+  });
+
+  // ── Analyze ──────────────────────────────────────────────────
+  analyzeBtn.addEventListener('click', runScan);
+
+  async function runScan(){
+    if (!currentImageB64) return;
+    analyzeBtn.disabled = true;
+    uploadBtn.disabled = true;
+    camBtn.disabled = true;
+    frame.classList.add('scanning');
+
+    try{
+      const res = await fetch('/image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image_base64: currentImageB64, conf: parseFloat(confSlider.value) })
+      });
+      const data = await res.json();
+      frame.classList.remove('scanning');
+      analyzeBtn.disabled = false;
+      uploadBtn.disabled = false;
+      camBtn.disabled = false;
+
+      if (data.error){
+        renderError(data.error);
+        return;
+      }
+
+      if (data.image_base64){
+        showPreview('data:image/png;base64,' + data.image_base64);
+      }
+      renderReport(data);
+    } catch(err){
+      frame.classList.remove('scanning');
+      analyzeBtn.disabled = false;
+      uploadBtn.disabled = false;
+      camBtn.disabled = false;
+      renderError('Could not reach the server. Is main.py running?');
+    }
+  }
+
+  function renderError(msg){
+    reportTime.textContent = '';
+    reportBody.innerHTML = `<div class="error-box">Scan failed: ${escapeHtml(msg)}</div>`;
+  }
+
+  function renderReport(data){
+    const now = new Date();
+    reportTime.textContent = now.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+
+    const detections = data.detections || [];
+    const recs = data.recommendations || {};
+    const severity = data.severity || { score: 0, label: 'Clear' };
+    const conflicts = data.conflicts || [];
+
+    if (detections.length === 0){
+      reportBody.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-title">Clear scan</div>
+          <div class="empty-state-body">No conditions detected at this sensitivity. Try lowering the threshold if you expected a result.</div>
+        </div>`;
+      return;
+    }
+
+    // best confidence per class
+    const byClass = {};
+    detections.forEach(d => {
+      if (!byClass[d.class] || d.confidence > byClass[d.class]) byClass[d.class] = d.confidence;
+    });
+
+    const color = SEVERITY_COLORS[severity.label] || 'var(--slate)';
+
+    let html = `
+      <div class="severity-block">
+        <div class="severity-swatch" style="background:${color}"></div>
+        <div>
+          <div class="severity-label">${escapeHtml(severity.label)}</div>
+          <div class="severity-score">Severity score ${severity.score}</div>
+        </div>
+      </div>
+      <div class="section-label">Detected conditions (${Object.keys(byClass).length})</div>
+    `;
+
+    Object.entries(byClass).forEach(([cls, conf]) => {
+      const rec = recs[cls] || { AM: 'Gentle care', PM: 'Consult professional' };
+      html += `
+        <div class="condition-card">
+          <div class="condition-top">
+            <span class="condition-name">${escapeHtml(cls)}</span>
+            <span class="condition-conf">${Math.round(conf * 100)}%</span>
+          </div>
+          <div class="condition-recs">
+            <div class="rec-slot"><b>AM</b>${escapeHtml(rec.AM)}</div>
+            <div class="rec-slot"><b>PM</b>${escapeHtml(rec.PM)}</div>
+          </div>
+        </div>
+      `;
+    });
+
+    if (conflicts.length > 0){
+      html += `<div class="section-label">Formulation notes</div>`;
+      conflicts.forEach(w => {
+        html += `<div class="conflict-item">${escapeHtml(w)}</div>`;
+      });
+    }
+
+    reportBody.innerHTML = html;
+  }
+
+  function escapeHtml(str){
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+})();
+</script>
+
+</body>
+</html>

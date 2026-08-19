@@ -8,3 +8,4 @@ datasets/
 *.pt
 *.zip
 .env
+advanced_data/

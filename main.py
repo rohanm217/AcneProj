@@ -1,77 +1,63 @@
 from pathlib import Path
-from fastapi.staticfiles import StaticFiles
-import uvicorn
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import base64
 import io
 from PIL import Image
 from ultralytics import YOLO
+import uvicorn
 
-app = FastAPI()
-app.mount("/static", StaticFiles(directory="static_assets"), name="static")
+from config import MODEL_PATH, RECOMMENDATIONS, compute_severity, check_conflicts
 
 BASE_DIR = Path(__file__).parent
-MODEL_PATH = BASE_DIR / "runs" / "detect" / "skin_pro_medium_v1" / "weights" / "best.pt"
+app = FastAPI(title="SkinScan AI")
+
+static_dir = BASE_DIR / "static_assets"
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
 model = YOLO(str(MODEL_PATH) if MODEL_PATH.exists() else "yolov8n.pt")
-
-RECOMMENDATIONS = {
-    'Pimples':     {'AM': 'Salicylic Acid Cleanser',              'PM': 'Benzoyl Peroxide 5% Spot Treatment'},
-    'blackhead':   {'AM': 'BHA Liquid Exfoliant',                 'PM': 'Double Cleanse (Oil + Water)'},
-    'conglobata':  {'AM': 'Gentle Hydrating Cleanser',            'PM': 'URGENT: Requires Prescription (Isotretinoin)'},
-    'crystanlline':{'AM': 'Centella Asiatica Soothing Mist',      'PM': 'Ceramide Barrier Repair Cream'},
-    'cystic':      {'AM': 'Anti-inflammatory Serum (Niacinamide)','PM': 'Adapalene 0.1% Gel + Deep Hydration'},
-    'folliculitis':{'AM': 'Antibacterial Wash (Benzoyl Peroxide)', 'PM': 'Warm Compress + Mupirocin (if prescribed)'},
-    'keloid':      {'AM': 'Silicone Gel / Sheet',                 'PM': 'Consult Professional for Corticosteroid info'},
-    'milium':      {'AM': 'Mild Lactic Acid Exfoliation',         'PM': 'Do Not Squeeze - Professional Extraction Only'},
-    'papular':     {'AM': 'Azelaic Acid 10% Suspension',          'PM': 'Zinc-based Soothing Cream'},
-    'purulent':    {'AM': 'Hydrocolloid Pimple Patch',            'PM': 'Gentle Non-foaming Cleanser (Avoid physical scrubs)'},
-}
-
-SEVERITY_WEIGHTS = {
-    'milium': 1, 'blackhead': 1, 'crystanlline': 1,
-    'Pimples': 2, 'papular': 2,
-    'purulent': 3, 'folliculitis': 3,
-    'cystic': 4, 'keloid': 4,
-    'conglobata': 5,
-}
-
-
-def compute_severity(unique_classes: list[str]) -> dict:
-    score = sum(SEVERITY_WEIGHTS.get(c, 1) for c in unique_classes)
-    if score == 0:
-        label = "Clear"
-    elif score <= 2:
-        label = "Mild"
-    elif score <= 6:
-        label = "Moderate"
-    elif score <= 12:
-        label = "Severe"
-    else:
-        label = "Critical"
-    return {"score": score, "label": label}
+model_loaded = MODEL_PATH.exists()
 
 
 class ImageData(BaseModel):
     image_base64: str
+    conf: float = 0.35
+
+
+@app.get("/health")
+def health():
+    return {
+        "status": "ok",
+        "model_loaded": model_loaded,
+        "model_path": str(MODEL_PATH),
+        "classes": list(model.names.values()) if model_loaded else [],
+    }
+
+
+@app.get("/")
+def index():
+    html_path = BASE_DIR / "static_assets" / "index.html"
+    if html_path.exists():
+        return FileResponse(str(html_path))
+    return {"message": "SkinScan AI API is running. POST /image to analyse skin."}
 
 
 @app.post("/image")
-def image(data: ImageData):
+def analyze_image(data: ImageData):
     try:
         raw = data.image_base64
         img_bytes = base64.b64decode(raw.split(",")[1] if "," in raw else raw)
         pil_image = Image.open(io.BytesIO(img_bytes)).convert("RGB")
 
-        results = model(pil_image)
+        results = model.predict(pil_image, conf=data.conf, verbose=False)
 
-        result_np = results[0].plot()
-        result_np = result_np[..., ::-1]  # BGR -> RGB
-        result_image = Image.fromarray(result_np, "RGB")
-
-        buffered = io.BytesIO()
-        result_image.save(buffered, format="PNG")
-        result_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+        result_np = results[0].plot()[..., ::-1]  # BGR -> RGB
+        buf = io.BytesIO()
+        Image.fromarray(result_np, "RGB").save(buf, format="PNG")
+        result_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
 
         names = results[0].names
         detections = [
@@ -80,17 +66,20 @@ def image(data: ImageData):
         ]
 
         unique_classes = list({d["class"] for d in detections})
-        recommendations = {cls: RECOMMENDATIONS.get(cls, {"AM": "Gentle Care", "PM": "Consult Professional"})
-                           for cls in unique_classes}
+        score, label = compute_severity(unique_classes)
 
         return {
             "image_base64": result_b64,
             "detections": detections,
-            "recommendations": recommendations,
-            "severity": compute_severity(unique_classes),
+            "recommendations": {
+                cls: RECOMMENDATIONS.get(cls, {"AM": "Gentle Care", "PM": "Consult Professional"})
+                for cls in unique_classes
+            },
+            "severity": {"score": score, "label": label},
+            "conflicts": check_conflicts(unique_classes),
         }
     except Exception as e:
-        print(f"Error processing image: {e}")
+        print(f"Error: {e}")
         return {"error": str(e)}
 
 
